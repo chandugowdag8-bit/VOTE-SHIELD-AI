@@ -1,6 +1,6 @@
 streamlit
 face_recognition
 opencv-python-headless
-numpy
+numpy==1.26.4
 firebase-admin
 pandas
