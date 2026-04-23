@@ -1,19 +1,19 @@
-import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, firestore
-import os
-
 # --- 1. CLOUD CONNECTION ---
 if not firebase_admin._apps:
     if os.path.exists("secrets.json"):
         cred = credentials.Certificate("secrets.json")
     else:
-        # For Streamlit Cloud deployment
-        fb_conf = st.secrets["firebase"]
-        cred = credentials.Certificate(dict(fb_conf))
+        # Improved logic to handle Streamlit Secrets
+        fb_dict = {}
+        for key in st.secrets["firebase"]:
+            value = st.secrets["firebase"][key]
+            # This fixes the common "newline" issue in private keys
+            if key == "private_key" and isinstance(value, str):
+                fb_dict[key] = value.replace("\\n", "\n")
+            else:
+                fb_dict[key] = value
+        cred = credentials.Certificate(fb_dict)
     firebase_admin.initialize_app(cred)
-
-db = firestore.client()
 
 # --- 2. HTML/CSS CUSTOM STYLING ---
 st.set_page_config(page_title="VOTE-SHIELD AI", page_icon="🛡️")
