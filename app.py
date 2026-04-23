@@ -1,128 +1,122 @@
 import streamlit as st
-import face_recognition
-import numpy as np
 import firebase_admin
 from firebase_admin import credentials, firestore
 import os
-import json
 
-# --- FIREBASE INITIALIZATION ---
+# --- 1. CLOUD CONNECTION ---
 if not firebase_admin._apps:
-    # This logic allows it to work both on your laptop AND on the web
     if os.path.exists("secrets.json"):
         cred = credentials.Certificate("secrets.json")
     else:
-        # This part is for when you upload to Streamlit Cloud
+        # For Streamlit Cloud deployment
         fb_conf = st.secrets["firebase"]
         cred = credentials.Certificate(dict(fb_conf))
-    
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
 
-# --- STYLING ---
+# --- 2. HTML/CSS CUSTOM STYLING ---
 st.set_page_config(page_title="VOTE-SHIELD AI", page_icon="🛡️")
+
 st.markdown("""
     <style>
-    .main { background-color: #f5f5f5; }
-    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #007bff; color: white; }
+    .main { background-color: #f0f2f6; }
+    .stButton>button {
+        width: 100%;
+        background-color: #002D62;
+        color: white;
+        border-radius: 8px;
+        height: 3em;
+        font-weight: bold;
+    }
+    .header-box {
+        background-color: #002D62;
+        padding: 20px;
+        border-radius: 10px;
+        color: white;
+        text-align: center;
+        margin-bottom: 25px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- SESSION STATE FOR LOGIN ---
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
+# --- 3. OFFICIAL LOGIN ---
+if "auth" not in st.session_state:
+    st.session_state.auth = False
 
-# --- LOGIN PAGE ---
-if not st.session_state.authenticated:
-    st.title("🛡️ VOTE-SHIELD LOGIN")
-    user = st.text_input("Official Username")
-    pw = st.text_input("Security Password", type="password")
-    if st.button("Login"):
-        if user == "admin" and pw == "india2026":
-            st.session_state.authenticated = True
+if not st.session_state.auth:
+    st.markdown('<div class="header-box"><h1>🛡️ VOTE-SHIELD OFFICIAL ACCESS</h1></div>', unsafe_allow_html=True)
+    user = st.text_input("Officer ID")
+    pw = st.text_input("Security Pin", type="password")
+    if st.button("Authorize Access"):
+        if pw == "admin123":
+            st.session_state.auth = True
             st.rerun()
         else:
             st.error("Invalid Credentials")
     st.stop()
 
-# --- MAIN APP NAVIGATION ---
-menu = ["Home", "Voter Enrollment", "Live Voting Booth", "Voter Registry"]
-choice = st.sidebar.selectbox("Navigation", menu)
-
-if choice == "Home":
-    st.title("Welcome to Vote-Shield AI")
-    st.write("Secure, Biometric-based Anti-Scam Election System.")
-    st.image("https://img.icons8.com/clouds/200/000000/fingerprint.png")
+# --- 4. MAIN APP ---
+st.sidebar.title("🛡️ Control Panel")
+choice = st.sidebar.radio("Navigation", ["Voter Enrollment", "Identity Verification", "Election Statistics"])
 
 # --- PHASE 1: ENROLLMENT ---
-elif choice == "Voter Enrollment":
-    st.header("👤 Mandatory Enrollment")
-    aadh = st.text_input("Aadhaar Number (12 Digits)")
-    name = st.text_input("Full Name")
-    elec_id = st.text_input("Election Card Number")
-    photo = st.camera_input("Capture Face Biometrics")
+if choice == "Voter Enrollment":
+    st.markdown('<div class="header-box"><h2>📋 Voter Registration Portal</h2></div>', unsafe_allow_html=True)
     
-    if st.button("Sync to Cloud Registry"):
-        if aadh and name and photo:
-            with st.spinner("Processing Biometrics..."):
-                img = face_recognition.load_image_file(photo)
-                encodings = face_recognition.face_encodings(img)
-                
-                if len(encodings) > 0:
-                    encoding_list = encodings[0].tolist()
-                    db.collection("voters").document(aadh).set({
-                        "name": name,
-                        "aadhaar": aadh,
-                        "election_id": elec_id,
-                        "face_encoding": encoding_list,
-                        "has_voted": False
-                    })
-                    st.success(f"✅ Voter {name} Registered Successfully!")
-                else:
-                    st.error("Face not detected. Try again.")
+    col1, col2 = st.columns(2)
+    with col1:
+        aadh = st.text_input("Aadhaar Number (UIDAI)")
+        name = st.text_input("Voter Full Name")
+    with col2:
+        epic = st.text_input("Election ID (EPIC)")
+        age = st.number_input("Age", min_value=18, max_value=120)
 
-# --- PHASE 2: LIVE VOTING ---
-elif choice == "Live Voting Booth":
-    st.header("🗳️ Identity Verification Booth")
-    scan = st.camera_input("Scan Face")
+    photo = st.camera_input("Capture ID Photo for Registry")
+
+    if st.button("Sync Data to National Cloud"):
+        if aadh and name and epic:
+            db.collection("voters").document(aadh).set({
+                "name": name,
+                "aadhaar": aadh,
+                "epic": epic,
+                "voted": False
+            })
+            st.success(f"Verified: {name} successfully added to Registry.")
+
+# --- PHASE 2: VERIFICATION ---
+elif choice == "Identity Verification":
+    st.markdown('<div class="header-box"><h2>🗳️ Live Verification Booth</h2></div>', unsafe_allow_html=True)
     
-    if scan:
-        live_img = face_recognition.load_image_file(scan)
-        live_enc = face_recognition.face_encodings(live_img)
-        
-        if live_enc:
-            voters_ref = db.collection("voters").stream()
-            found = False
+    voter_uid = st.text_input("Scan or Enter Aadhaar Number")
+    
+    if voter_uid:
+        doc = db.collection("voters").document(voter_uid).get()
+        if doc.exists:
+            data = doc.to_dict()
+            st.info(f"**Found Record:** {data['name']} | **EPIC:** {data['epic']}")
             
-            for doc in voters_ref:
-                voter = doc.to_dict()
-                stored_enc = np.array(voter['face_encoding'])
-                
-                # ML Match (Tolerance 0.5 for high accuracy)
-                match = face_recognition.compare_faces([stored_enc], live_enc[0], tolerance=0.5)
-                
-                if match[0]:
-                    st.subheader(f"✅ Identity Verified: {voter['name']}")
-                    if voter['has_voted']:
-                        st.error("🚨 SCAM ALERT: This person has already voted!")
-                    else:
-                        if st.button("Authorize & Cast Vote"):
-                            db.collection("voters").document(voter['aadhaar']).update({"has_voted": True})
-                            st.balloons()
-                            st.success("Vote Cast Successfully!")
-                    found = True
-                    break
-            if not found:
-                st.error("❌ Person not found in registry!")
+            st.camera_input("Biometric Confirmation")
+            
+            if data['voted']:
+                st.error("🚨 FRAUD DETECTED: This individual has already cast a vote!")
+            else:
+                if st.button("AUTHORIZE VOTE"):
+                    db.collection("voters").document(voter_uid).update({"voted": True})
+                    st.balloons()
+                    st.success("Identity Verified. Vote Authorized.")
+        else:
+            st.error("No Record Found. Check Aadhaar Number.")
 
-# --- ADMIN LOGS ---
-elif choice == "Voter Registry":
-    st.header("📊 Master Database (Cloud)")
+# --- PHASE 3: STATISTICS ---
+elif choice == "Election Statistics":
+    st.markdown('<div class="header-box"><h2>📊 Real-time Election Logs</h2></div>', unsafe_allow_html=True)
     voters = db.collection("voters").stream()
-    data = [v.to_dict() for v in voters]
-    if data:
-        df = pd.DataFrame(data).drop(columns=['face_encoding'])
-        st.table(df)
+    voter_list = [v.to_dict() for v in voters]
+    
+    if voter_list:
+        import pandas as pd
+        df = pd.DataFrame(voter_list)
+        st.table(df[['name', 'aadhaar', 'epic', 'voted']])
     else:
-        st.write("No voters registered yet.")
+        st.write("Registry is currently empty.")
