@@ -1,19 +1,35 @@
+import streamlit as st
+import firebase_admin
+from firebase_admin import credentials, firestore
+import os
+import pandas as pd  # Added this to prevent another NameError later!
+
 # --- 1. CLOUD CONNECTION ---
+# Check if the app is already connected to avoid "App already exists" error
 if not firebase_admin._apps:
     if os.path.exists("secrets.json"):
         cred = credentials.Certificate("secrets.json")
     else:
         # Improved logic to handle Streamlit Secrets
-        fb_dict = {}
-        for key in st.secrets["firebase"]:
-            value = st.secrets["firebase"][key]
-            # This fixes the common "newline" issue in private keys
-            if key == "private_key" and isinstance(value, str):
-                fb_dict[key] = value.replace("\\n", "\n")
-            else:
-                fb_dict[key] = value
-        cred = credentials.Certificate(fb_dict)
+        try:
+            fb_dict = {}
+            for key in st.secrets["firebase"]:
+                value = st.secrets["firebase"][key]
+                # This fixes the common "newline" issue in private keys
+                if key == "private_key" and isinstance(value, str):
+                    fb_dict[key] = value.replace("\\n", "\n")
+                else:
+                    fb_dict[key] = value
+            cred = credentials.Certificate(fb_dict)
+        except Exception as e:
+            st.error("Firebase Secrets are missing or formatted incorrectly in Streamlit Settings.")
+            st.stop()
+            
     firebase_admin.initialize_app(cred)
+
+db = firestore.client()
+
+
 
 # --- 2. HTML/CSS CUSTOM STYLING ---
 st.set_page_config(page_title="VOTE-SHIELD AI", page_icon="🛡️")
